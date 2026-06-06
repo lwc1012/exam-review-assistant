@@ -2,111 +2,110 @@
 变体练习题生成 Skill — /generate-practice
 
 用法：
-    /generate-practice <课程名> [章节名] [数量]
-
-核心要求（已内化）：
-    1. 变体原则：同知识点、同题型、同难度，但数值/场景/参数不同
-    2. 覆盖所有题型：名词解释、选择、简答、计算（调度/页面置换/银行家/磁盘/PV）
-    3. 每题附带：完整答案 + 分步解析 + 易错提醒
-    4. 难度标注与往届真题一致
-    5. 输出 .md + .docx 双格式
+    /generate-practice <课程名> [章节名]                 → MCP Skill 模式
+    python skills/generate_practice.py <课程名> [章节名]  → 独立运行模式
 """
+
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+from mcp_server.vector_store import VectorStore
+from mcp_server.metadata_store import MetadataStore
+
 
 SKILL_INSTRUCTION = """
 你是一个专业的大学课程练习题生成器。用户当前正在使用 /generate-practice 命令。
 
 ## 核心原则
-
 1. **全面覆盖**：基于 get_question_stats 分析出的题型分布，每种题型都要出变体题
-2. **变体规则**：
-   - 选择题：保持题干结构，更换具体数值，改变干扰项，正确答案位置随机变化
-   - 计算题：改变数值参数，保持解题步骤和方法不变，确保变体后计算过程合理且结果正确
-   - 证明题：改变具体条件和参数，保持证明思路和方法不变
-   - 简答题：改变具体场景描述，保持核心概念考察点不变
-   - 名词解释：选同章节同类型的重要概念
-3. **完整解析**：每道变体题附带 (1)完整答案 (2)逐步解题说明 (3)易错点提示
-4. **多格式输出**：先生成 .md 文件，再用 md2docx.py 转为 .docx
+2. **变体规则**：同知识点、同题型、同难度，数值/场景/参数不同，答案验算正确
+3. **完整解析**：每道变体题附带 (1)完整答案 (2)逐步解析 (3)易错点提示
+4. **多格式输出**：生成 .md 后用 md2docx.py 转 .docx
 
 ## 执行步骤
-
-### Step 1：获取题型分布
-调用 get_question_stats(course_name="{课程名}") 了解往年题型比例。
-
-### Step 2：获取原题
-调用 get_questions(course_name="{课程名}", chapter_title="{章节名}", limit=30)
-如果未指定章节，分别获取 source="往年期末" 和 source="作业" 的题目。
-
-### Step 3：获取知识点
-对每个考察的知识点，调用 search_knowledge(query="{知识点}", top_k=5) 确认概念定义。
-
-### Step 4：生成变体题
-按以下规则逐题型生成：
-
-#### 名词解释变体
-选取与历年考题同等重要的核心概念，不能重复历年考过的。
-
-#### 选择题变体
-选项数、题型结构与原题一致。干扰项要"看起来合理"但不能是正确答案。
-
-#### 计算题变体（重点）
-- 调度题：改变作业数量、到达时间、运行时间，确保 SJF 和 FCFS 答案不同
-- 页面置换题：改变访问序列和页框数，确保 FIFO 和 LRU 结果不同
-- 银行家算法：改变资源和进程数量，确保有安全序列
-- 磁盘调度：改变磁头位置和请求队列
-- 分页地址转换：改变页目录/页表位数和地址值
-
-#### PV 操作题变体
-改变场景描述，保持同步互斥关系的复杂性不变。
-经典模型：生产者-消费者 → 改为"水果问题"/"阅览室问题"/"诊所问题"
-
-## 输出结构
-
----
-## 一、名词解释练习（X 题 × 5 分 = XX 分）
-### 原题知识点
-（列出往届考过的概念）
-
-### 变体题
-1. **{概念名}**（5 分）
-   （题干...）
-   **答案要点**：...
-
----
-
-## 二、选择题练习
-...
-
----
-
-## 三、计算题练习
-### 题型一：CPU 调度算法
-**原题模式**：（描述原题结构）
-**变体题**：（新题，含数据表格）
-
-### 题型二：页面置换算法
-...
-
-### 题型三：银行家算法
-...
-
-### 题型四：磁盘调度
-...
-
-### 题型五：PV 操作
-...
-
----
-
-## 参考答案
-（每题的完整答案、分步解析、易错提醒）
-
----
-
-## 注意事项
-- 计算题答案务必自己验算一遍
-- PV 操作题的信号量初值必须标注清楚
-- 如果某题型历年没考过，也要出 1-2 道预备题
-- 语言风格：学术严谨，题干清晰无歧义
+### Step 1：获取题型分布 — get_question_stats(course_name="{课程名}")
+### Step 2：获取原题 — get_questions(course_name="{课程名}", limit=30)
+### Step 3：逐题型生成变体题（选择/填空/简答/计算/PV操作）
+### Step 4：生成参考答案（完整 + 分步 + 易错提醒）
 """
 
-print(SKILL_INSTRUCTION)
+
+def run_standalone(course_name: str, chapter: str = None, num_per_type: int = 3):
+    """
+    独立运行 — 直接读取题库生成变体练习题建议。
+
+    参数
+    ----
+    course_name : 课程名
+    chapter : 章节名（可选，不传则覆盖全部章节）
+    num_per_type : 每种题型生成几道变体题
+    """
+    vs = VectorStore()
+    ms = MetadataStore()
+
+    print(f"课程: {course_name}")
+    if chapter:
+        print(f"章节: {chapter}")
+    print(f"{'='*50}")
+
+    course = ms.get_course(course_name)
+    if not course:
+        print(f"[ERROR] 课程 '{course_name}' 不存在，请先导入资料")
+        return None
+
+    cid = course["id"]
+
+    # 1. 题型分布
+    print(f"\n[1/4] 题型分布...")
+    q_types = ms.get_question_types(cid)
+    source_stats = ms.get_source_stats(cid)
+    print(f"  已有题型: {q_types}")
+    print(f"  来源分布: {source_stats}")
+
+    # 2. 获取原题（按来源分类）
+    print(f"\n[2/4] 获取原题...")
+    all_questions = {}
+    for src in ["作业", "期中考试", "往年期末"]:
+        qs = ms.get_questions(cid, source=src, limit=30)
+        if qs:
+            all_questions[src] = qs
+            print(f"  {src}: {len(qs)} 道")
+
+    # 3. 按题型分组
+    print(f"\n[3/4] 题型分析...")
+    questions_by_type = {}
+    for src, qs in all_questions.items():
+        for q in qs:
+            qt = q["q_type"]
+            if qt not in questions_by_type:
+                questions_by_type[qt] = []
+            questions_by_type[qt].append(q)
+
+    for qt, qs in questions_by_type.items():
+        print(f"  {qt}: {len(qs)} 道原题")
+
+    # 4. 为每种题型提供变体建议
+    print(f"\n[4/4] 变体建议...")
+    print(f"  每种题型可生成 {num_per_type} 道变体题")
+    print(f"  变体原则: 同知识点、同难度、不同数值/场景")
+    print(f"  输出: .md（详细版）+ .docx（打印版）")
+    print(f"\n  >>> 将以上原题提供给 AI 即可生成对应变体练习题 <<<")
+
+    return {
+        "course": course_name,
+        "types": q_types,
+        "questions_by_type": {qt: len(qs) for qt, qs in questions_by_type.items()},
+        "all_questions": all_questions,
+    }
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("用法: python skills/generate_practice.py <课程名> [章节名] [数量]")
+        print("示例: python skills/generate_practice.py 操作系统 第三章 5")
+        sys.exit(1)
+
+    course_name = sys.argv[1]
+    chapter = sys.argv[2] if len(sys.argv) > 2 else None
+    num = int(sys.argv[3]) if len(sys.argv) > 3 else 3
+    run_standalone(course_name, chapter, num)

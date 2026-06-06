@@ -2,168 +2,133 @@
 模拟试卷生成 Skill — /mock-exam
 
 用法：
-    /mock-exam <课程名>
-
-核心要求（已内化）：
-    1. 题型比例与往年完全一致（基于 get_question_stats 实际数据）
-    2. 所有题目全新生成，不与任何原题重复
-    3. 覆盖重点章节（权重加权）+ 老师强调知识点
-    4. 附带：答题卡 + 详细答案 + 评分标准 + 知识点覆盖表
-    5. 难度梯度：从易到难排列
-    6. 输出 .md + .docx 双格式
+    /mock-exam <课程名>                                  → MCP Skill 模式
+    python skills/mock_exam.py <课程名>                   → 独立运行模式
 """
+
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+from mcp_server.vector_store import VectorStore
+from mcp_server.metadata_store import MetadataStore
+
 
 SKILL_INSTRUCTION = """
 你是一个专业的大学考试命题专家。用户当前正在使用 /mock-exam 命令。
 
 ## 核心原则
-
-1. **题型严格匹配**：基于 get_question_stats 返回的实际数据确定题型、数量、分值
-2. **题目全新**：所有题目不能与 get_questions 返回的任何原题重复
+1. **题型严格匹配**：基于 get_question_stats 返回的实际数据确定题型/数量/分值
+2. **题目全新**：所有题目不能与题库中任何原题重复
 3. **重点覆盖**：get_key_points 中标记的重点章节出题量翻倍
-4. **难度梯度**：从简单到困难排列（名词解释 → 选择 → 简答 → 计算 → 综合/PV）
+4. **难度梯度**：从易到难排列（名词解释→选择→简答→计算→综合/PV）
 5. **完整配套**：答题卡 + 答案 + 评分标准 + 知识点覆盖表
-6. **多格式输出**：生成 .md 后用 md2docx.py 转为 .docx
+6. **多格式输出**：生成 .md 后运行 md2docx.py 转 .docx
 
 ## 执行步骤
-
-### Step 1：获取考试结构
-调用 get_question_stats(course_name="{课程名}") 获取：
-- 题型种类和数量分布
-- 各题型的来源分布
-- 难度分布
-
-### Step 2：获取重点
-调用 get_key_points(course_name="{课程名}") 获取考试重点。
-重点章节出题权重 ×2。
-
-### Step 3：获取原题（避免重复）
-调用 get_questions(course_name="{课程名}", source="往年期末", limit=100)
-获取所有往年期末题作为"不可重复"的黑名单 + 题型结构参考。
-
-### Step 4：获取章节
-调用 get_chapter_list(course_name="{课程名}") 了解知识覆盖范围。
-
-### Step 5：确定试卷结构
-基于 Step 1 的数据，精确确定：
-- 题型种类
-- 每种题型多少题
-- 每题多少分
-- 总分值（通常 100 分）
-- 建议考试时间
-
-### Step 6：逐题型命题
-
-#### 名词解释（通常 4-5 题 × 4-5 分 = 20 分）
-- 从重点章节中各选一个核心概念
-- 不能与往年考过的概念重复
-- 覆盖不同章节
-
-#### 选择题（通常 10-15 题 × 2 分 = 20-30 分）
-- 覆盖全部章节，每个章节至少 1 题
-- 干扰项必须"看起来合理"
-- 正确答案随机分布（不能全选 B）
-
-#### 简答题（通常 3-4 题 × 6-8 分 = 24 分）
-- 比较类问题（进程vs线程、分页vs分段、ULT vs KLT）
-- 工作原理类（SPOOLing、缺页处理、银行家算法思想）
-- 每个重点章节至少 1 题
-
-#### 计算题（通常 3-4 题 × 7-9 分 = 27-30 分）
-- 调度算法计算（FCFS/SJF/RR 周转时间）
-- 页面置换计算（FIFO/LRU/OPT 缺页次数）
-- 银行家算法（判断安全状态）
-- 磁盘调度（寻道距离）/ 分页地址转换
-
-#### 综合题 / PV 操作（通常 1 题 × 9-10 分）
-- 生产者-消费者变体 / 读者-写者变体 / 哲学家进餐变体
-- 综合运用多个知识点
-
-### Step 7：生成配套材料
-- 答题卡（选择题答题框 + 填空/计算作答区域）
-- 参考答案（完整答案 + 给分点标注）
-- 评分标准（每题详细评分要点）
-- 知识点覆盖表（每道题对应章节/知识点/难度/分值）
-
-## 输出结构
-
----
-# 《{课程名}》期末模拟试卷
-
-**考试时间：XX分钟　满分：XX分**
-**命题依据：N 套历年真题　重点来源：老师标注**
-
-## 一、名词解释（X 题 × X 分 = XX 分）
-1. ...
-2. ...
-
-## 二、选择题（X 题 × X 分 = XX 分）
-1. 题干...
-   A. ...  B. ...  C. ...  D. ...
-
-## 三、简答题（X 题 × X 分 = XX 分）
-1. （XX 分）...
-
-## 四、计算题（X 题 × X 分 = XX 分）
-1. （XX 分）...
-
-## 五、综合题（XX 分）
-...
-
----
-
-# 答题卡
-
-## 一、名词解释
-| 题号 | 1 | 2 | 3 | 4 |
-## 二、选择题
-| 题号 | 1 | 2 | 3 | ... |
-| 答案 |   |   |   |     |
-
----
-
-# 参考答案与评分标准
-
-## 一、名词解释
-### 第1题（X 分）
-**答案**：...
-**评分要点**：定义 2 分 + 关键要素 2 分 + 作用/意义 1 分
-
-## 二、选择题
-| 题号 | 1 | 2 | 3 | ... |
-| 答案 | A | C | B | ... |
-（部分题目附解析，说明干扰项为什么错）
-
-## 三、简答题
-（每题答案 + 分点给分说明）
-
-## 四、计算题
-（完整计算过程 + 中间步骤 + 最终答案 + 分步给分点）
-
-## 五、综合题
-（PV 操作信号量定义 + 代码 + 评分要点）
-
----
-
-# 知识点覆盖表
-
-| 题号 | 题型 | 章节 | 知识点 | 难度 | 分值 |
-|------|------|------|--------|------|------|
-| ... | ... | ... | ... | ★★ | X |
-
-**覆盖统计**：
-- 重点章节覆盖率：XX%
-- 全部章节覆盖率：XX%
-- 题型比例与往年一致性：XX%
-
----
-
-## 命题注意事项
-- 总分 100 分（或与往年一致）
-- 计算题答案必须验算
-- 选择题正确选项随机分布
-- PV 操作题标注信号量初值
-- 对资料不足的章节，在覆盖表中标注
+### Step 1：get_question_stats(course_name="{课程名}") — 确定题型/数量/分值
+### Step 2：get_key_points(course_name="{课程名}") — 重点章节出题加权
+### Step 3：get_questions(course_name="{课程名}", source="往年期末") — 参考结构，避免重复
+### Step 4：get_chapter_list(course_name="{课程名}") — 知识点覆盖
+### Step 5：逐题型命题（名词解释/选择/简答/计算/综合）
+### Step 6：生成配套材料（答题卡+答案+评分标准+知识点覆盖表）
 """
 
-print(SKILL_INSTRUCTION)
+
+def run_standalone(course_name: str):
+    """
+    独立运行 — 直接读取题库分析往年试卷结构，给出命题蓝图。
+    """
+    vs = VectorStore()
+    ms = MetadataStore()
+
+    print(f"课程: {course_name}")
+    print(f"{'='*50}")
+
+    course = ms.get_course(course_name)
+    if not course:
+        print(f"[ERROR] 课程 '{course_name}' 不存在，请先导入资料")
+        return None
+
+    cid = course["id"]
+
+    # 1. 题型分析
+    print(f"\n[1/5] 题型分布...")
+    q_types = ms.get_question_types(cid)
+    source_stats = ms.get_source_stats(cid)
+    print(f"  题型: {q_types}")
+    print(f"  来源分布:")
+    for s in source_stats:
+        print(f"    {s['source']} ({s['source_year']}): {s['count']} 题")
+
+    # 2. 重点标记
+    print(f"\n[2/5] 重点章节...")
+    key_points = ms.get_key_points(cid)
+    chapters = ms.get_chapters(cid)
+    for ch in chapters:
+        if ch["weight"] > 1.0:
+            print(f"  {ch['title']}: 权重 {ch['weight']} (重点)")
+    print(f"  重点标记: {len(key_points)} 条")
+
+    # 3. 往年期末题参考
+    print(f"\n[3/5] 往年期末题参考...")
+    finals = ms.get_questions(cid, source="往年期末", limit=50)
+    # 统计题型和难度
+    type_dist = {}
+    diff_dist = {}
+    for q in finals:
+        qt = q["q_type"]
+        d = q["difficulty"]
+        type_dist[qt] = type_dist.get(qt, 0) + 1
+        diff_dist[d] = diff_dist.get(d, 0) + 1
+    print(f"  往年题型分布: {type_dist}")
+    print(f"  往年难度分布: {diff_dist}")
+
+    # 4. 搜索各章节的考试热点
+    print(f"\n[4/5] 各章节考试热点...")
+    chapter_topics = [
+        ("进程 PCB 状态 线程", "进程管理"),
+        ("CPU 调度 FCFS SJF RR 算法", "处理器调度"),
+        ("死锁 银行家 条件 安全 序列", "死锁"),
+        ("分页 分段 虚拟 内存 页面 置换", "内存管理"),
+        ("文件 系统 FCB inode 磁盘", "文件系统"),
+        ("I/O 控制 中断 DMA spooling", "I/O管理"),
+        ("同步 互斥 信号量 PV 临界区", "进程同步"),
+        ("进程 通信 管道 共享 内存 IPC", "进程通信"),
+    ]
+
+    for query, topic in chapter_topics:
+        results = vs.search(query=query, course_filter=course_name, top_k=3,
+                            source_tag_filter="往年期末", boost_key_points=True)
+        if results:
+            print(f"  {topic}: 有往年题覆盖 ✓")
+
+    # 5. 确定试卷蓝图
+    print(f"\n[5/5] 试卷蓝图...")
+    print(f"  试卷总分: 100 分")
+    print(f"  建议结构:")
+    print(f"    名词解释: 4-5 题 × 4-5 分 = 20 分")
+    print(f"    选择题:   10-15 题 × 2 分 = 20-30 分")
+    print(f"    简答题:   3-4 题 × 6-8 分 = 24 分")
+    print(f"    计算题:   3-4 题 × 7-9 分 = 27-30 分")
+    print(f"    综合题:   1 题 × 10 分 = 10 分")
+    print(f"\n  配套输出: .md + .docx")
+    print(f"  附带: 答题卡 + 答案 + 评分标准 + 知识点覆盖表")
+    print(f"\n  >>> 将以上数据提供给 AI 即可生成完整模拟试卷 <<<")
+
+    return {
+        "course": course_name,
+        "type_distribution": type_dist,
+        "difficulty_distribution": diff_dist,
+        "key_points": len(key_points),
+        "final_count": len(finals),
+    }
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("用法: python skills/mock_exam.py <课程名>")
+        print("示例: python skills/mock_exam.py 操作系统")
+        sys.exit(1)
+
+    course_name = sys.argv[1]
+    run_standalone(course_name)
