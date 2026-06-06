@@ -1,0 +1,32 @@
+# 用户数据（资料文件、向量库、数据库）
+data/
+
+# Python 缓存
+__pycache__/
+__pycache__/*
+*.pyc
+*.pyo
+
+# IDE / 工具
+.workbuddy/
+.vscode/
+.idea/
+
+# 生成的输出文件（复习资料、练习题、模拟卷）
+*_详细复习资料.*
+*_变体练习题.*
+*_模拟试卷.*
+*复习资料.*
+*复习提纲.*
+操作系统*.md
+操作系统*.docx
+
+# 临时文件
+*.tmp
+*.log
+demo_workflow.py
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
