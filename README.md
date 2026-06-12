@@ -71,7 +71,15 @@ pip install -r requirements.txt
 
 ### 第 2 步：连接 AI 工具
 
-在项目根目录创建 `.claude/mcp.json`（或者 `.vscode/mcp.json`）：
+MCP Server 需要配合支持 MCP 的 AI 工具使用。选一个你已经在用的：
+
+| 方式 | 工具名 | 怎么安装 | 配置文件 |
+|------|--------|----------|----------|
+| **推荐** | **Claude Code**（Anthropic 官方） | VS Code 按 `Ctrl+Shift+X`，搜索 **Claude Code**（2M+ 安装） | 项目根目录创建 `.mcp.json` |
+| 方案 B | **GitHub Copilot Chat**（Microsoft） | VS Code 按 `Ctrl+Shift+X`，搜索 **GitHub Copilot Chat**（需 Copilot 订阅） | 项目根目录创建 `.vscode/mcp.json` |
+| 方案 C | **Claude Code CLI**（终端版） | `npm install -g @anthropic-ai/claude-code`（需 Node 18+） | 项目根目录创建 `.mcp.json` |
+
+在项目根目录创建配置文件（以 Claude Code 为例）：
 
 ```json
 {
@@ -87,7 +95,7 @@ pip install -r requirements.txt
 
 > 🔧 `python` 命令不行就换成完整路径，如 `C:/Users/你的用户名/AppData/Local/Programs/Python/Python312/python.exe`
 
-**重启** Claude Code / VS Code，看到工具列表出现即成功。
+**重启** VS Code / AI 工具，看到工具列表出现即成功。
 
 ### 第 3 步：整理资料
 
